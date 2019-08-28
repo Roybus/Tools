@@ -73,7 +73,7 @@ function calPermissions {
     Write-Host 'Tool used to configure a users calendar permissions.'
     Start-Sleep -S 2 #Sleep for 2 secondsa
     Connect-MsolService #Connect to 0365 service
-    $ID = Read-Host 'Please ennter the email for the user account.' #Get ID of user you are chnaging the permissions on
+    $ID = Read-Host 'Please enter the email for the user account.' #Get ID of user you are chnaging the permissions on
     $User = Read-Host 'Please enter the user you wish to have access e.g. Default' #Get ID of user you are giving access to
     $Access = Read-Host 'Please enter the level of access e.g. FullAccess' #Get the level of access
 
@@ -196,7 +196,7 @@ function upn0365 {
     Write-Host 'Tool used to configure a users Username for O365.'
     Start-Sleep -S 2 #Sleep for 2 secondsa
     Connect-MsolService #Connect to 0365 service
-    $currentUPN = Read-Host 'Please ennter the current email for the user account.' #Get current username of account
+    $currentUPN = Read-Host 'Please enter the current email for the user account.' #Get current username of account
     $newUPN = Read-Host 'Please enter the new email.' #Get new username for account
 
     Set-MsolUserPrincipalName -UserPrincipalName $currentUPN -NewUserPrincipalName $newUPN -AccessRights $Access
@@ -211,9 +211,13 @@ function stopWinUp {
     #Get Wait timer
     $timer = Read-Host 'Please enter a time (in seconds) for the wait period. 1-99999'
     
-    net stop wuauserv && net stop bits && net stop dosvc
+    net stop wuauserv
+    net stop bits
+    net stop dosvc
     wait $timer
-    net start wuauserv && net start bits && net start dosvc
+    net start wuauserv
+    net start bits
+    net start dosvc
 
     anyInput
 }
