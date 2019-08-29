@@ -1,13 +1,16 @@
 Write-Host '1 - Change calendar permissions.'
 Write-Host '2 - VSS Fix.'
-Write-Host '3 - Change Users Password.'
+Write-Host '3 - Change Users Password. - AD User'
 Write-Host '4 - DISM Repair.'
 Write-Host '5 - SFC Scan.'
 Write-Host '6 - Change UPN.'
-Write-Host '7 - Stop Windows Updates - Period of time'
-Write-Host '8 - Register DNS - Server'
-Write-Host '9 - Config to NTP'
-Write-Host '10 - Display Email Alias for all Users - O365/Exchange'
+Write-Host '7 - Stop Windows Updates - Period of time.'
+Write-Host '8 - Register DNS - Server.'
+Write-Host '9 - Config to NTP.'
+Write-Host '10 - Display Email Alias for all Users - O365/Exchange.'
+Write-Host '11 - Mass Import Users to O365 Using CSV File.'
+Write-Host '12 - Grant Admin Full Access to all Mailboxes.'
+Write-Host '13 - Grant a User Access to Another Mailbox.'
 
 Write-Host "`n`n0 - Close."
 
@@ -26,7 +29,7 @@ function selction {
         vssFix
     }
     elseif ($Number -eq 3){
-        changeUserPassword
+        changeUserPasswordAD
     }
     elseif ($Number -eq 4){
         dism
@@ -48,6 +51,15 @@ function selction {
     }
     elseif ($Number -eq 10) {
         displayEmailAlias
+    }
+    elseif ($Number -eq 11) {
+        importO365CSV
+    }
+    elseif ($Number -eq 12){
+        grantAdminMailbox
+    }
+    elseif ($Number -eq 13){
+        mailboxAccess
     }
     else {
         Write-Host 'Please enter a valid number.'
@@ -71,13 +83,19 @@ function anyInput {
 function calPermissions {
     
     Write-Host 'Tool used to configure a users calendar permissions.'
-    Start-Sleep -S 2 #Sleep for 2 secondsa
-    Connect-MsolService #Connect to 0365 service
-    $ID = Read-Host 'Please enter the email for the user account.' #Get ID of user you are chnaging the permissions on
-    $User = Read-Host 'Please enter the user you wish to have access e.g. Default' #Get ID of user you are giving access to
-    $Access = Read-Host 'Please enter the level of access e.g. FullAccess' #Get the level of access
+    Start-Sleep -S 2 #Sleep for 2 seconds
 
-    Set-MailboxFolderPermissions -Identity $ID -User $User -AccessRights $Access
+    #Connect to 0365 service
+    Import-Module MSOnline
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+    
+    $ID = Read-Host 'Please enter the email for the account you wish to share the calendar from' #Get ID of user you are chnaging the permissions on
+    $User = Read-Host 'Please enter the user you wish to have access to this' #Get ID of user you are giving access to
+    $Access = Read-Host 'Please enter the level of access e.g. Editor' #Get the level of access
+
+    Set-MailboxFolderPermissions -Identity $ID -User $User+':\Calendar' -AccessRights $Access
 
     anyInput
 }
@@ -173,9 +191,12 @@ function vssFix {
         net start "Microsoft Software Shadow Copy Provider"
     }
 
-#Function to change user password from UPN - Working Progress
-function changeUserPassword {
-    $UPN = $_.UserPrincipalName; Get-ADUser -Filter {UserPrincipalName -Eq $UPN} - Properties *
+#Function to change user password from UPN
+function changeUserPasswordAD {
+    $adUser = Read-Host 'Please enter the username'
+    $newPass = Read-Host 'Please enter the new password'
+    
+    Set-ADAccountPassword -Identity $adUser -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "$newPass" -Force)
     
     anyInput
 }
@@ -195,7 +216,13 @@ function upn0365 {
     
     Write-Host 'Tool used to configure a users Username for O365.'
     Start-Sleep -S 2 #Sleep for 2 secondsa
-    Connect-MsolService #Connect to 0365 service
+    
+    #Connect to 0365 service
+    Import-Module MSOnline
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+    
     $currentUPN = Read-Host 'Please enter the current email for the user account.' #Get current username of account
     $newUPN = Read-Host 'Please enter the new email.' #Get new username for account
 
@@ -274,6 +301,53 @@ function displayEmailAlias {
     
     anyInput
 
+}
+
+#Fucntion for mass importing users into O365
+function importO365CSV {
+    
+    Connect-MsolService
+
+    $pathCSV = Read-Host 'Please enter the path for the CSV file - Including name'
+
+    Import-Csv $pathCSV | foreach {
+        New-MsolUser -UserPrincipalName $_.UserPrincipalName -DisplayName $_.DisplayName -FirstName $_.Firstname -Lastname $_.Lastname -Password $_.Password -UsageLocation $_.Location
+    }
+    
+    anyInput
+}
+
+#Function to grant the admin user full access to all mailboxes
+function grantAdminMailbox {
+    
+    #Connect to O365 admin using PS session
+    Import-Module MSOnline
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+
+    $adminUser = Read-Host 'Please enter the admin user email.'
+    Get-Mailbox -ResultSize unlimited -Filter {(RecipientTypeDetails -eq 'UserMailbox') -and (Alias -ne 'Admin')} | Add-MailboxPermission -User $adminUser -AccessRights FullAccess -InheritanceType All
+    
+    anyInput
+}
+
+#Function to grant user access to another mailbox
+function mailboxAccess {
+    
+    #Connect to O365 admin using PS session
+    Import-Module MSOnline
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+    
+    $idGrant = Read-Host 'Please enter the email of the mailbox you are giving access to'
+    $userGrant = Read-Host 'Please enter the email of the user you wish to grant access to'
+    $accessGrant = Read-Host 'Please enter the level of access e.g. FullAccess'
+
+    Add-MailboxFolderPermission -Identity $idGrant -User $userGrant -AccessRights $accessGrant
+
+    anyInput
 }
 
 selction
