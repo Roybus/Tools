@@ -1,9 +1,9 @@
-Write-Host '1 - Change calendar permissions.'
+Write-Host '1 - Change calendar permissions - O365.'
 Write-Host '2 - VSS Fix.'
-Write-Host '3 - Change Users Password. - AD User'
+Write-Host '3 - Change Users Password. - O365 User'
 Write-Host '4 - DISM Repair.'
 Write-Host '5 - SFC Scan.'
-Write-Host '6 - Change UPN.'
+Write-Host '6 - Change UPN O365.'
 Write-Host '7 - Stop Windows Updates - Period of time.'
 Write-Host '8 - Register DNS - Server.'
 Write-Host '9 - Config to NTP.'
@@ -17,7 +17,7 @@ Write-Host "`n`n0 - Close."
 #Function for selection table
 function selction {
     
-    $Number = Read-Host 'Please enter a number: 1-10' #Get user selection
+    $Number = Read-Host 'Please enter a number: 1-13' #Get user selection
 
     if ($Number -eq 0){
         exit
@@ -29,7 +29,7 @@ function selction {
         vssFix
     }
     elseif ($Number -eq 3){
-        changeUserPasswordAD
+        changeUserPasswordO365
     }
     elseif ($Number -eq 4){
         dism
@@ -86,7 +86,6 @@ function calPermissions {
     Start-Sleep -S 2 #Sleep for 2 seconds
 
     #Connect to 0365 service
-    Import-Module MSOnline
     $LiveCred = Get-Credential
     $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
     Import-PSSession $Session
@@ -96,6 +95,9 @@ function calPermissions {
     $Access = Read-Host 'Please enter the level of access e.g. Editor' #Get the level of access
 
     Set-MailboxFolderPermissions -Identity $ID -User $User+':\Calendar' -AccessRights $Access
+
+    Remove-PSSession $Session
+    $LiveCred = ''
 
     anyInput
 }
@@ -192,12 +194,29 @@ function vssFix {
     }
 
 #Function to change user password from UPN
-function changeUserPasswordAD {
-    $adUser = Read-Host 'Please enter the username'
+function changeUserPasswordO365 {
+    
+    #Connect to 0365 service
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+    
+    $o365User = Read-Host 'Please enter the username'
     $newPass = Read-Host 'Please enter the new password'
+    $forceChange = Read-Host 'Would you like to force the user to change on next login? 1 - Yes | 2 - No'
+
+
+    if ($forceChange -eq 1){
+        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass -ForceChangePassword
+    }
+    else {
+        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass
+    }
     
-    Set-ADAccountPassword -Identity $adUser -Reset -NewPassword (ConvertTo-SecureString -AsPlainText "$newPass" -Force)
     
+    Remove-PSSession $Session
+    $LiveCred = ''
+
     anyInput
 }
 
@@ -218,15 +237,17 @@ function upn0365 {
     Start-Sleep -S 2 #Sleep for 2 secondsa
     
     #Connect to 0365 service
-    Import-Module MSOnline
     $LiveCred = Get-Credential
     $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
     Import-PSSession $Session
-    
+
     $currentUPN = Read-Host 'Please enter the current email for the user account.' #Get current username of account
     $newUPN = Read-Host 'Please enter the new email.' #Get new username for account
 
-    Set-MsolUserPrincipalName -UserPrincipalName $currentUPN -NewUserPrincipalName $newUPN -AccessRights $Access
+    Set-MsolUserPrincipalName -UserPrincipalName $currentUPN -NewUserPrincipalName $newUPN
+
+    Remove-PSSession $Session
+    $LiveCred = ''
 
     anyInput
    
@@ -241,7 +262,7 @@ function stopWinUp {
     net stop wuauserv
     net stop bits
     net stop dosvc
-    wait $timer
+    Start-Sleep -S $timer
     net start wuauserv
     net start bits
     net start dosvc
@@ -252,9 +273,9 @@ function stopWinUp {
 #Function to register DNS on server
 function registerDNS {
     ipconfig /flushdns
-    wait 1
+    Start-Sleep -S 1
     ipconfig /registerdns
-    wait 1
+    Start-Sleep -S 1
     net stop netlogon
     net start netlogon
     
@@ -277,9 +298,9 @@ function registerNTP {
     anyInput
 }
 
-#Function for displaying all users mailboxes
+#Function for displaying all users mailboxes - Change for O365
 function displayEmailAlias {
-    get-mailbox | foreach{ 
+    get-mailbox | ForEach { 
 
         $host.UI.Write("White", $host.UI.RawUI.BackGroundColor, "`nUser Name: " + $_.DisplayName+"`n")
        
@@ -310,8 +331,8 @@ function importO365CSV {
 
     $pathCSV = Read-Host 'Please enter the path for the CSV file - Including name'
 
-    Import-Csv $pathCSV | foreach {
-        New-MsolUser -UserPrincipalName $_.UserPrincipalName -DisplayName $_.DisplayName -FirstName $_.Firstname -Lastname $_.Lastname -Password $_.Password -UsageLocation $_.Location
+    Import-Csv $pathCSV | ForEach {
+        New-MsolUser -UserPrincipalName $_.UserPrincipalName -DisplayName $_.DisplayName -FirstName $_.Firstname -Lastname $_.Lastname -Password $_.Password -UsageLocation $_.Location -ForceChangePassword
     }
     
     anyInput
@@ -321,7 +342,6 @@ function importO365CSV {
 function grantAdminMailbox {
     
     #Connect to O365 admin using PS session
-    Import-Module MSOnline
     $LiveCred = Get-Credential
     $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
     Import-PSSession $Session
@@ -329,6 +349,9 @@ function grantAdminMailbox {
     $adminUser = Read-Host 'Please enter the admin user email.'
     Get-Mailbox -ResultSize unlimited -Filter {(RecipientTypeDetails -eq 'UserMailbox') -and (Alias -ne 'Admin')} | Add-MailboxPermission -User $adminUser -AccessRights FullAccess -InheritanceType All
     
+    Remove-PSSession $Session
+    $LiveCred = ''
+
     anyInput
 }
 
@@ -336,7 +359,6 @@ function grantAdminMailbox {
 function mailboxAccess {
     
     #Connect to O365 admin using PS session
-    Import-Module MSOnline
     $LiveCred = Get-Credential
     $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
     Import-PSSession $Session
@@ -344,10 +366,22 @@ function mailboxAccess {
     $idGrant = Read-Host 'Please enter the email of the mailbox you are giving access to'
     $userGrant = Read-Host 'Please enter the email of the user you wish to grant access to'
     $accessGrant = Read-Host 'Please enter the level of access e.g. FullAccess'
+    $autoMap = Read-Host 'Would you like this to map on Outlook? 1 - Yes | 2 - No'
 
-    Add-MailboxFolderPermission -Identity $idGrant -User $userGrant -AccessRights $accessGrant
+if ($autoMap -eq 1){
+    Add-MailboxFolderPermission -Identity $idGrant -User $userGrant -AccessRights $accessGrant -AutoMapping:$true
+}
+else{
+    Add-MailboxFolderPermission -Identity $idGrant -User $userGrant -AccessRights $accessGrant -AutoMapping:$false
+}
+    
+    Remove-PSSession $Session
+    $LiveCred = ''
 
     anyInput
 }
+
+#Import Needed modules
+Import-Module MSOnline
 
 selction
