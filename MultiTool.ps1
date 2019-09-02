@@ -11,13 +11,14 @@ Write-Host '10 - Display Email Alias for all Users - O365/Exchange.'
 Write-Host '11 - Mass Import Users to O365 Using CSV File.'
 Write-Host '12 - Grant Admin Full Access to all Mailboxes.'
 Write-Host '13 - Grant a User Access to Another Mailbox.'
+Write-Host '14 - Change all O365 password'
 
 Write-Host "`n`n0 - Close."
 
 #Function for selection table
 function selction {
     
-    $Number = Read-Host 'Please enter a number: 1-13' #Get user selection
+    $Number = Read-Host 'Please enter a number: 1-14' #Get user selection
 
     if ($Number -eq 0){
         exit
@@ -60,6 +61,9 @@ function selction {
     }
     elseif ($Number -eq 13){
         mailboxAccess
+    }
+    elseif ($Number -eq 14){
+        passO365Bulk
     }
     else {
         Write-Host 'Please enter a valid number.'
@@ -207,12 +211,11 @@ function changeUserPasswordO365 {
 
 
     if ($forceChange -eq 1){
-        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass -ForceChangePassword
+        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass -ForceChangePassword $True
     }
     else {
-        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass
+        Set-MsolUserPassword -UserPrincipalName $o365User -NewPassword $newPass -ForceChangePassword $False
     }
-    
     
     Remove-PSSession $Session
     $LiveCred = ''
@@ -298,28 +301,21 @@ function registerNTP {
     anyInput
 }
 
-#Function for displaying all users mailboxes - Change for O365
+#Function for displaying all users O365
 function displayEmailAlias {
-    get-mailbox | ForEach { 
-
-        $host.UI.Write("White", $host.UI.RawUI.BackGroundColor, "`nUser Name: " + $_.DisplayName+"`n")
-       
-        for ($i=0;$i -lt $_.EmailAddresses.Count; $i++){
-           $address = $_.EmailAddresses[$i]
-           
-           $host.UI.Write("White", $host.UI.RawUI.BackGroundColor, $address.AddressString.ToString()+"`t")
-        
-           if ($address.IsPrimaryAddress)
-           { 
-               $host.UI.Write("Green", $host.UI.RawUI.BackGroundColor, "Primary Email Address`n")
-           }
-          else
-          {
-               $host.UI.Write("Green", $host.UI.RawUI.BackGroundColor, "Alias`n")
-           }
-        }
-    }
     
+    #Connect to O365 admin using PS session
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+
+    Get-Mailbox | Select-Object DisplayName,@{Name=”EmailAddresses”;Expression={$_.EmailAddresses |Where-Object {$_ -LIKE “SMTP:*”}}} | Sort | Export-Csv C:\Users\%Username%\Desktop\email-aliases.csv
+
+    Write-Host 'The list has been exported to your Desktop - email-aliases.csv'
+
+    Remove-PSSession $Session
+    $LiveCred = ''
+
     anyInput
 
 }
@@ -327,7 +323,10 @@ function displayEmailAlias {
 #Fucntion for mass importing users into O365
 function importO365CSV {
     
-    Connect-MsolService
+    #Connect to O365 admin using PS session
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
 
     $pathCSV = Read-Host 'Please enter the path for the CSV file - Including name'
 
@@ -335,6 +334,9 @@ function importO365CSV {
         New-MsolUser -UserPrincipalName $_.UserPrincipalName -DisplayName $_.DisplayName -FirstName $_.Firstname -Lastname $_.Lastname -Password $_.Password -UsageLocation $_.Location -ForceChangePassword
     }
     
+    Remove-PSSession $Session
+    $LiveCred = ''
+
     anyInput
 }
 
@@ -355,7 +357,7 @@ function grantAdminMailbox {
     anyInput
 }
 
-#Function to grant user access to another mailbox
+#Function to grant user access to another mailbox O365
 function mailboxAccess {
     
     #Connect to O365 admin using PS session
@@ -379,6 +381,32 @@ else{
     $LiveCred = ''
 
     anyInput
+}
+
+#Function for change all O365 users' password
+function passO365Bulk {
+    
+    #Connect to 0365 service
+    $LiveCred = Get-Credential
+    $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri https://ps.outlook.com/powershell/ -Credential $LiveCred -Authentication Basic -AllowRedirection
+    Import-PSSession $Session
+    
+    $newPass = Read-Host 'Please enter the new password'
+    $forceChange = Read-Host 'Would you like to force the user to change on next login? 1 - Yes | 2 - No'
+
+
+    if ($forceChange -eq 1){
+        Get-MsolUser |%{Set-MsolUserPassword -userPrincipalName $_.UserPrincipalName –NewPassword $newPass -ForceChangePassword $True}
+    }
+    else {
+        Get-MsolUser |%{Set-MsolUserPassword -userPrincipalName $_.UserPrincipalName –NewPassword $newPass -ForceChangePassword $False}
+    }
+
+    Remove-PSSession $Session
+    $LiveCred = ''
+
+    anyInput
+    
 }
 
 #Import Needed modules
